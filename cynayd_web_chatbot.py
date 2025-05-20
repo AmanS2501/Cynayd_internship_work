@@ -13,6 +13,7 @@ from collections import defaultdict
 import hdbscan
 import sqlite3
 import pickle
+import json
 
 load_dotenv()
 
@@ -87,13 +88,12 @@ def get_stored_embeddings():
     return list(texts), np.array(embeddings)
 
 # Web Scraping
-def scrape_webpage(url):
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(response.text, "html.parser")
-    for script in soup(["script", "style"]):
-        script.decompose()
-    text = " ".join([p.text.strip() for p in soup.find_all("p")])
-    return {"text": re.sub(r'\s+', ' ', text), "url": url}
+def load_content_from_json(C:\Users\Aman Sheikh\Documents\GitHub\Cynayd_internship_work\document_metadata.json):
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    combined_text = " ".join(entry["content"] for entry in data if "content" in entry)
+    return {"text": combined_text.strip(), "url": "local-json"}
 
 # Chunking function
 def chunk_text(text, chunk_size=300):
@@ -150,10 +150,19 @@ def calculate_confidence(original_query, retrieved_results):
     return round(np.mean(similarities), 2)
 
 # Main Execution
-if __name__ == "_main_":
-    url = "https://cynayd.com"
-    scraped_data = scrape_webpage(url)
+if __name__ == "__main__":
+    # Load JSON data instead of scraping
+    json_path = "document_metadata.json"  # Update path if needed
+    scraped_data = load_content_from_json(json_path)
+
+    if not scraped_data["text"]:
+        raise ValueError("No text found in the JSON file.")
+
     text_chunks = chunk_text(scraped_data["text"])
+
+    if not text_chunks:
+        raise ValueError("Text chunking failed. No content to process.")
+
     bm25 = BM25Okapi([chunk.split() for chunk in text_chunks])
     index, vectors = create_faiss_index(text_chunks)
     query = "What services does Cynayd offer?"
@@ -161,6 +170,7 @@ if __name__ == "_main_":
     confidence = calculate_confidence(query, results)
     summary = summarize_results(query, results)
     clustered_results = cluster_results(results)
+
     print(f"\n🔹 Query: {query}")
     print(f"🔹 Confidence Score: {confidence}/1.0")
     print(f"🔹 Clustered Results:", clustered_results)

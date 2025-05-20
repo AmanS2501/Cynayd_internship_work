@@ -4,7 +4,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TensorFlow logs
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom operations
 
 # Install required libraries
-# !pip install langchain langchain-core langchain_community langgraph langchain-huggingface transformers torch
+# !pip install langchain jlangchain-core langchain_community langgraph langchain-huggingface transformers torch
 # !pip install unstructured
 
 # Import necessary libraries
@@ -24,6 +24,9 @@ from IPython.display import Image, display
 import requests
 from bs4 import BeautifulSoup
 from langchain_core.documents import Document
+from dotenv import load_dotenv
+load_dotenv()
+
 # Load documents from URLs
 urls = ['https://cynayd.com/', "https://cynayd.com/service-web", "https://cynayd.com/why-us"]
 
@@ -79,6 +82,7 @@ vectorstore = Chroma.from_documents(
 
 #Initialize Hugging Face text generation pipeline for CPU
 model_id = "mistralai/Mistral-7B-Instruct-v0.2"  # Replace with your desired model
+
 
 # Load the tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_id)
