@@ -17,6 +17,8 @@ import json
 
 load_dotenv()
 
+conversation_history = []
+
 # Initialize models
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -87,7 +89,7 @@ def get_stored_embeddings():
     texts, embeddings = zip(*[(row[0], pickle.loads(row[1])) for row in rows])
     return list(texts), np.array(embeddings)
 
-# Web Scraping
+# Loading data from json file
 def load_content_from_json(json_path):
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -131,11 +133,21 @@ def cluster_results(results):
 def search(query, index, chunks, bm25, vectors, top_k=5):
     query_embedding = embedding_model.encode([query], convert_to_numpy=True)
     _, faiss_indices = index.search(query_embedding, top_k)
-    faiss_results = [chunks[i] for i in faiss_indices[0]]
+
+    if not faiss_indices[0].size:
+        print("⚠️ FAISS returned no results for this query.")
+        faiss_results = []
+    else:
+        faiss_results = [chunks[i] for i in faiss_indices[0] if i < len(chunks)]
+
     bm25_scores = bm25.get_scores(query.split())
     bm25_results = [chunks[i] for i in np.argsort(bm25_scores)[::-1][:top_k]]
+    
     combined_results = list(set(faiss_results + bm25_results))
+    if not combined_results:
+        print("⚠️ No relevant documents found using FAISS or BM25.")
     return rerank_results(query, combined_results)
+
 
 # Re-Ranking
 def rerank_results(query, results):
@@ -149,6 +161,24 @@ def calculate_confidence(original_query, retrieved_results):
     result_embeddings = embedding_model.encode(retrieved_results, convert_to_numpy=True)
     similarities = np.dot(result_embeddings, query_embedding.T).flatten()
     return round(np.mean(similarities), 2)
+
+
+
+
+def resolve_followup_question(followup_query, history):
+    if not history:
+        return followup_query  # Nothing to resolve with
+    context = " ".join([f"Q: {item['query']}\nA: {item['summary']}" for item in history[-3:]])  # Limit to last 3 turns
+    full_query = f"The user previously asked:\n{context}\nNow the user is asking:\n{followup_query}\nResolve this into a standalone question."
+    
+    # Use your LLM to resolve the query
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful assistant that turns follow-up questions into standalone questions using conversation history."),
+        ("user", full_query)
+    ])
+    standalone_query = model.invoke(prompt).content
+    return standalone_query
+
 
 # Main Execution
 if __name__ == "__main__":
@@ -167,13 +197,28 @@ if __name__ == "__main__":
 
     bm25 = BM25Okapi([chunk.split() for chunk in text_chunks])
     index, vectors = create_faiss_index(text_chunks)
-    query = input("Enter your query: ")
+
+    followup_input = input("Is this a follow-up question? (y/n): ").strip().lower()
+    if followup_input == 'y':
+        query = input("Enter your follow-up query: ")
+        query = resolve_followup_question(query, conversation_history)
+    else:
+        query = input("Enter your query: ")
+
     results = search(query, index, text_chunks, bm25, vectors)
     confidence = calculate_confidence(query, results)
     summary = summarize_results(query, results)
     clustered_results = cluster_results(results)
+    
+    
 
     print(f"\n🔹 Query: {query}")
     print(f"🔹 Confidence Score: {confidence}/1.0")
     print(f"🔹 Clustered Results:", clustered_results)
     print(f"🔹 Summary of Results:\n", summary)
+
+    # Store the conversation history
+    conversation_history.append({
+        "query": query,
+        "summary": summary
+    })
